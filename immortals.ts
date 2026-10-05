@@ -6,10 +6,8 @@
  * coancestry); the child Z of P and Q is legal iff F_Z = rel(P, Q) / 2 <= f. Legality
  * depends only on the ancestry of P and Q, so the closure below does not depend on
  * mating order. Running the file calls verify(), which asserts the computational
- * claims listed in the Appendix; "node immortals.ts --seven" also checks the n = 7
- * row of the table in Section 6. Needs Node.js 22.18 or later, and no packages.
+ * claims listed in the Appendix. Needs Node.js 22.18 or later, and no packages.
  */
-import process from "node:process";
 
 /** Exact rational p/q in lowest terms, with q > 0. */
 class Frac {
@@ -49,11 +47,13 @@ function check(ok: boolean, claim: string): void {
  * Close n founders under legal matings. A[i] holds the relationships of node i with
  * nodes 0..i, so the matrix is stored once and is symmetric by construction.
  * ordered = true is the two-role variant: (P, Q) and (Q, P) are different children.
- * Doubles are exact for the f < 2^-n runs: every coefficient there is a dyadic
- * rational with denominator <= 2^(2n-2). A run that hits `cap` is evidence of
- * growth only, never a proof of infinity (Theorem 1 proves that).
+ * The run stops at the first legal mating with F > 0 and returns N = Infinity: by
+ * Theorem 2 such a mating needs f >= 2^-n, and Theorem 1 then gives infinitely many
+ * nodes. Every mating performed therefore has F = 0, so every node lies in S_0(n),
+ * and doubles are exact: each coefficient is a dyadic rational with denominator
+ * <= 2^(2n-2).
  */
-function saturate(n: number, f: number, cap = 5000, ordered = false) {
+function saturate(n: number, f: number, ordered = false) {
   const A: Float64Array[] = [];
   const sup: number[] = [];                                // bitmask of founder support
   for (let i = 0; i < n; i++) {
@@ -68,21 +68,22 @@ function saturate(n: number, f: number, cap = 5000, ordered = false) {
     for (let j = 0; j < n; j++)
       if (i < j || (ordered && i !== j)) { qP.push(i); qQ.push(j); }
   for (let t = 0; t < qP.length; t++) {                    // the queue grows while we iterate
-    const z = A.length;
-    if (z === cap) return { N: z, A, sup, hitCap: true };
     const P = qP[t], Q = qQ[t];
+    check((sup[P] & sup[Q]) === 0, "every mating performed has F = 0");
+    const z = A.length;
     const row = new Float64Array(z + 1);                   // relationship of the child to everyone
     for (let x = 0; x < z; x++) row[x] = (rel(P, x) + rel(Q, x)) / 2;
     row[z] = 1 + rel(P, Q) / 2;
     A.push(row);
     sup.push(sup[P] | sup[Q]);
-    for (let x = 0; x < z; x++)
-      if (row[x] <= tol) {                                 // the new node may now mate with x
-        qP.push(z); qQ.push(x);
-        if (ordered) { qP.push(x); qQ.push(z); }
-      }
+    for (let x = 0; x < z; x++) {
+      if (row[x] > tol) continue;                          // the new node may mate with x
+      if (row[x] > 0) return { N: Infinity, A, sup, inbredF: row[x] / 2 };
+      qP.push(z); qQ.push(x);
+      if (ordered) { qP.push(x); qQ.push(z); }
+    }
   }
-  return { N: A.length, A, sup, hitCap: false };
+  return { N: A.length, A, sup, inbredF: 0 };
 }
 
 /**
@@ -164,8 +165,8 @@ const L0TwoRole = (n: number): number =>
   range(1, n + 1).reduce((s, k) => s + (comb(n, k) * factorial(2 * k - 2)) / factorial(k - 1), 0);
 
 /** The checks on S_0(n) behind one row of Section 6; returns L(n, 0) and the smallest positive A. */
-function zeroPopulation(n: number, cap: number) {
-  const { N, A, sup } = saturate(n, 0, cap);
+function zeroPopulation(n: number) {
+  const { N, A, sup } = saturate(n, 0);
   check(N === L0(n), `Proposition 1, n=${n}`);
   const perSupport = range(1, n + 1).map((k) => sup.filter((s) => pop(s) === k).length);
   const expected = range(1, n + 1).map((k) => comb(n, k) * doubleFactorial(2 * k - 3));
@@ -178,19 +179,17 @@ function zeroPopulation(n: number, cap: number) {
 }
 
 /** Assert the checks behind one row of the table in Section 6; return the row. */
-function tableRow(n: number, cap: number): string {
-  const { N, low } = zeroPopulation(n, cap);
-  const below = saturate(n, 2 ** -n * (1 - 1e-7), cap).N;  // with the min-A check above,
+function tableRow(n: number): string {
+  const { N, low } = zeroPopulation(n);
+  const below = saturate(n, 2 ** -n * (1 - 1e-7)).N;       // with the min-A check above,
   check(below === N, `Theorem 2, n=${n}`);                 // this covers every f < 2^-n
-  check(saturate(n, 2 ** -n, cap).hitCap, `growth at f = 2^-n, n=${n}`);
-  return `${n}  ${String(N).padEnd(7)} ${String(low).padEnd(9)} ${"hold".padEnd(7)} ${String(below).padEnd(11)} >${cap} (cap)`;
+  const at = saturate(n, 2 ** -n);
+  check(at.N === Infinity && at.inbredF === 2 ** -n, `inbred mating legal at f = 2^-n, n=${n}`);
+  return `${n}  ${String(N).padEnd(7)} ${String(low).padEnd(9)} ${"hold".padEnd(7)} ${String(below).padEnd(11)} inf (F = ${at.inbredF})`;
 }
 
-/**
- * Assert the computational claims listed in the Appendix; print the table of Section 6.
- * seven = true adds its n = 7 row, with a cap of 25000 nodes.
- */
-function verify(seven = false): void {
+/** Assert the computational claims listed in the Appendix; print the table of Section 6. */
+function verify(): void {
   check(range(2, 8).map(L0).join() === "3,9,37,225,1881,19873", "table of Section 3 (OEIS A220452)");
   check(range(2, 8).map(L0TwoRole).join() === "4,21,184,2425,42396,916909",
     "two-role counts of Section 5 (OEIS A224500)");
@@ -215,16 +214,16 @@ function verify(seven = false): void {
   }
 
   console.log("n  L(n,0)  min A>0   Lemmas  below 2^-n  at 2^-n");
-  for (let n = 2; n < (seven ? 8 : 7); n++)                // the cap must exceed L(n, 0)
-    console.log(tableRow(n, n === 7 ? 25000 : 5000));
+  for (let n = 2; n <= 7; n++) console.log(tableRow(n));
   check([1 / 16, 1 / 14, 1 / 12].every((f) => saturate(3, f).N === 9), "Section 6: n = 3 examples");
   check([1 / 32, 1 / 24].every((f) => saturate(4, f).N === 37), "Section 6: n = 4 examples");
 
   for (let n = 2; n < 6; n++) {                            // two-role variant (Sec. 5 remark)
-    const { N, A, sup } = saturate(n, 0, 5000, true);
+    const { N, A, sup } = saturate(n, 0, true);
     check(N === L0TwoRole(n) && pairChecks(A, sup, n).lemmas, `two-role S_0, n=${n}`);
-    check(saturate(n, 2 ** -n * (1 - 1e-7), 5000, true).N === N, `two-role Theorem 2, n=${n}`);
-    check(saturate(n, 2 ** -n, 5000, true).hitCap, `two-role growth at f = 2^-n, n=${n}`);
+    check(saturate(n, 2 ** -n * (1 - 1e-7), true).N === N, `two-role Theorem 2, n=${n}`);
+    const at = saturate(n, 2 ** -n, true);
+    check(at.N === Infinity && at.inbredF === 2 ** -n, `two-role inbred mating at f = 2^-n, n=${n}`);
   }
 
   {
@@ -272,4 +271,4 @@ function verify(seven = false): void {
   console.log("All claims verified.");
 }
 
-verify(process.argv.includes("--seven"));
+verify();
