@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "Verification script for \"Bounded Inbreeding in the Seven Immortals Problem: An Exact Threshold for n Founders\""
+authors:
+  - family-names: Amarante
+    given-names: Jronny
+    affiliation: "Independent researcher, Dumaguete City, Philippines"
+repository-code: "https://github.com/jronnybravo/seven-immortals"
+license: MIT
+keywords:
+  - Seven Immortals problem
+  - inbreeding coefficient
+  - pedigree
