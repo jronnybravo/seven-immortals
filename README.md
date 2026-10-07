@@ -11,7 +11,7 @@ are needed:
 
     node immortals.ts
 
-It prints the computed values of the table in Section 6 and ends with
+It prints the computed values of Table 2 (Section 6) and ends with
 `All claims verified.` Any failed claim stops the run with a message naming it.
 A run takes about 10 seconds and 2 GB of memory.
 
